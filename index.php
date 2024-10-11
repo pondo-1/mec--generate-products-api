@@ -15,39 +15,28 @@ add_action('rest_api_init', function () {
 
 function fetch_and_generate_product_json_paginated()
 {
-  $per_page = 100; // Fetch products in batches of 100
-  $page = 3;
+  // Load WooCommerce products
+  $args = array(
+    'post_type' => 'product',
+    'posts_per_page' => -1,
+  );
+  $products = get_posts($args);
+
   $product_data = array();
-  $total_products = 0;
 
-  // do {
-  // Use WooCommerce API to get products in batches (100 per request)
-  $products = wc_get_products(array(
-    'limit' => 10000,
-    'offset' => 10000,
-    'status' => 'publish',
-    'orderby' => 'name',
-    'order' => 'ASC'
-  ));
+  foreach ($products as $product_post) {
+    $product_id = $product_post->ID;
+    $sku = get_post_meta($product_id, '_sku', true);
+    $name = get_the_title($product_id);
+    $description = get_post_field('post_content', $product_id);
+    $image = wp_get_attachment_url(get_post_thumbnail_id($product_id));
 
-  if (empty($products)) {
-    break; // Exit loop if no more products
-  }
-
-  // Process the products in this batch
-  foreach ($products as $product) {
-    $product_id = $product->get_id();
-    $sku = $product->get_sku();
-    $name = $product->get_name();
-    $description = $product->get_description();
-    $image = wp_get_attachment_url($product->get_image_id());
-
-    // Get custom field 'Artikel_Freifeld6'
+    // Check if product has the custom field 'Artikel_Freifeld6'
     $meta_field_6 = get_post_meta($product_id, 'Artikel_Freifeld6', true);
 
-    // Variable Product (master;1 in Artikel_Freifeld6)
+    // Variable Product (master;1)
     if (strpos($meta_field_6, 'master;1') !== false) {
-      // Assuming 'Kolbenmaß (mm)' is the attribute, customize as needed
+      // Assuming 'Kolbenmaß (mm)' is the attribute, customize this if needed
       $attribute_name = "Kolbenmaß (mm)";
       $product_data[$sku] = array(
         'sku' => $sku,
@@ -60,22 +49,10 @@ function fetch_and_generate_product_json_paginated()
         )
       );
     }
-  }
-
-  foreach ($products as $product) {
-
-    // Variant Product (-m in Artikel_Freifeld6)
-    if (strpos($meta_field_6, '-m') !== false) {
-      $product_id = $product->get_id();
-      $sku = $product->get_sku();
-      $name = $product->get_name();
-      $description = $product->get_description();
-      $image = wp_get_attachment_url($product->get_image_id());
-
-      // Get custom field 'Artikel_Freifeld6'
-      $meta_field_6 = get_post_meta($product_id, 'Artikel_Freifeld6', true);
+    // Variant Product (-m)
+    elseif (strpos($meta_field_6, '-M') !== false) {
       // Get parent SKU from 'Artikel_Freifeld6'
-      $parent_sku = explode(';', $meta_field_6)[2];
+      $parent_sku = $meta_field_6;
 
       // Assuming the last line of description contains the variant details
       $description_lines = explode("\n", $description);
@@ -88,24 +65,15 @@ function fetch_and_generate_product_json_paginated()
         $product_data[$parent_sku]['attribute'][$attribute_name][$variant_count] = array(
           'variant' => $variant_name,
           'sku' => $sku,
-          'price' => $product->get_price()
+          'price' => 0 // Assuming price is 0 as default
         );
       }
     }
   }
-
-
-  // Move to the next page
-  $page++;
-  $total_products += count($products);
-
   // Clear memory after each batch
   wp_cache_flush();
   // } while (count($products) === $per_page); // Loop until less than $per_page products are returned
 
   // Return the processed product data as a JSON response
-  return rest_ensure_response(array(
-    'total_products_processed' => $total_products,
-    'product_data' => $product_data
-  ));
+  return rest_ensure_response($product_data);
 }
