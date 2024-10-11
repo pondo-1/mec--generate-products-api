@@ -15,65 +15,83 @@ add_action('rest_api_init', function () {
 
 function fetch_and_generate_product_json_paginated()
 {
-  // Load WooCommerce products
-  $args = array(
-    'post_type' => 'product',
-    'posts_per_page' => -1,
-  );
-  $products = get_posts($args);
 
+  $per_page = 100; // Fetch products in batches of 100
+  $page = 1;
   $product_data = array();
+  $total_products = 0;
 
-  foreach ($products as $product_post) {
-    $product_id = $product_post->ID;
-    $sku = get_post_meta($product_id, '_sku', true);
-    $name = get_the_title($product_id);
-    $description = get_post_field('post_content', $product_id);
-    $image = wp_get_attachment_url(get_post_thumbnail_id($product_id));
+  do {
+    // Use WooCommerce API to get products in batches (100 per request)
+    $products = wc_get_products(array(
+      'limit' => $per_page,
+      'page' => $page,
+      'status' => 'publish'
+    ));
 
-    // Check if product has the custom field 'Artikel_Freifeld6'
-    $meta_field_6 = get_post_meta($product_id, 'Artikel_Freifeld6', true);
-
-    // Variable Product (master;1)
-    if (strpos($meta_field_6, 'master;1') !== false) {
-      // Assuming 'Kolbenmaß (mm)' is the attribute, customize this if needed
-      $attribute_name = "Kolbenmaß (mm)";
-      $product_data[$sku] = array(
-        'sku' => $sku,
-        'products_name' => $name,
-        'products_description' => $description,
-        'products_type' => 'Variable',
-        'products_image' => $image,
-        'attribute' => array(
-          $attribute_name => array() // Variants will be added here
-        )
-      );
+    if (empty($products)) {
+      break; // Exit loop if no more products
     }
-    // Variant Product (-m)
-    elseif (strpos($meta_field_6, '-M') !== false) {
-      // Get parent SKU from 'Artikel_Freifeld6'
-      $parent_sku = $meta_field_6;
 
-      // Assuming the last line of description contains the variant details
-      $description_lines = explode("\n", $description);
-      $variant_name = end($description_lines);
+    // Process the products in this batch
+    foreach ($products as $product) {
+      $product_id = $product->get_id();
+      $sku = $product->get_sku();
+      $name = $product->get_name();
+      $description = $product->get_description();
+      $image = wp_get_attachment_url($product->get_image_id());
 
-      // Add variant to the parent product's attribute (Kolbenmaß)
-      if (isset($product_data[$parent_sku])) {
+      // Get custom field 'Meta: Artikel_Freifeld6'
+      $meta_field_6 = get_post_meta($product_id, 'Meta: Artikel_Freifeld6', true);
+
+      // Variable Product (master;1 in Meta: Artikel_Freifeld6)
+      if (strpos($meta_field_6, 'master;1') !== false) {
+        // Assuming 'Kolbenmaß (mm)' is the attribute, customize as needed
         $attribute_name = "Kolbenmaß (mm)";
-        $variant_count = count($product_data[$parent_sku]['attribute'][$attribute_name]) + 1;
-        $product_data[$parent_sku]['attribute'][$attribute_name][$variant_count] = array(
-          'variant' => $variant_name,
+        $product_data[$sku] = array(
           'sku' => $sku,
-          'price' => 0 // Assuming price is 0 as default
+          'products_name' => $name,
+          'products_description' => $description,
+          'products_type' => 'Variable',
+          'products_image' => $image,
+          'attribute' => array(
+            $attribute_name => array() // Variants will be added here
+          )
         );
       }
+      // Variant Product (-m in Meta: Artikel_Freifeld6)
+      elseif (strpos($meta_field_6, '-m') !== false) {
+        // Get parent SKU from 'Meta: Artikel_Freifeld6'
+        $parent_sku = explode(';', $meta_field_6)[0];
+
+        // Assuming the last line of description contains the variant details
+        $description_lines = explode("\n", $description);
+        $variant_name = end($description_lines);
+
+        // Add variant to the parent product's attribute (Kolbenmaß)
+        if (isset($product_data[$parent_sku])) {
+          $attribute_name = "Kolbenmaß (mm)";
+          $variant_count = count($product_data[$parent_sku]['attribute'][$attribute_name]) + 1;
+          $product_data[$parent_sku]['attribute'][$attribute_name][$variant_count] = array(
+            'variant' => $variant_name,
+            'sku' => $sku,
+            'price' => $product->get_price()
+          );
+        }
+      }
     }
-  }
-  // Clear memory after each batch
-  wp_cache_flush();
-  // } while (count($products) === $per_page); // Loop until less than $per_page products are returned
+
+    // Move to the next page
+    $page++;
+    $total_products += count($products);
+
+    // Clear memory after each batch
+    wp_cache_flush();
+  } while (count($products) === $per_page); // Loop until less than $per_page products are returned
 
   // Return the processed product data as a JSON response
-  return rest_ensure_response($product_data);
+  return rest_ensure_response(array(
+    'total_products_processed' => $total_products,
+    'product_data' => $product_data
+  ));
 }
