@@ -80,7 +80,7 @@ function fetch_and_generate_product_json_paginated()
 
         // Add variant to the parent product's attribute (Kolbenmaß)
         if (isset($product_data[$parent_sku])) {
-          $attribute_name = $product_data[$parent_sku]['attribute'];
+          $attribute_name = array_key_first($product_data[$parent_sku]['attribute']);
           $variant_count = count($product_data[$parent_sku]['attribute'][$attribute_name]) + 1;
           $product_data[$parent_sku]['attribute'][$attribute_name][$variant_count] = array(
             'variant' => $variant_name,
@@ -92,8 +92,7 @@ function fetch_and_generate_product_json_paginated()
           $variant_buffer[$parent_sku][] = array(
             'variant' => $variant_name,
             'sku' => $sku,
-            'price' => $product->get_price(),
-            'attribute_name' => $attribute_name
+            'price' => $product->get_price()
           );
         }
       }
@@ -103,8 +102,9 @@ function fetch_and_generate_product_json_paginated()
     foreach ($variant_buffer as $parent_sku => $variants) {
       if (isset($product_data[$parent_sku])) {
         foreach ($variants as $variant) {
-          $variant_count = count($product_data[$parent_sku]['attribute'][$variant['attribute_name']]) + 1;
-          $product_data[$parent_sku]['attribute'][$variant['attribute_name']][$variant_count] = $variant;
+          $attribute_name = array_key_first($product_data[$parent_sku]['attribute']);
+          $variant_count = count($product_data[$parent_sku]['attribute'][$attribute_name]) + 1;
+          $product_data[$parent_sku]['attribute'][$attribute_name][$variant_count] = $variant;
         }
       }
     }
