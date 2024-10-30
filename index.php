@@ -49,24 +49,21 @@ function mec_products_json($per_page = 100, $page = 1)
       break; // Exit loop if no more products
     }
 
-    // First, process only the variable products (master;1)
     foreach ($products as $product) {
       $product_id = $product->get_id();
       $sku = $product->get_sku();
-      $name = $product->get_name();
-      $price = $product->get_price();
-      $description = $product->get_description();
-      $image = wp_get_attachment_url($product->get_image_id());
-      $segments = get_the_excerpt($product_id);
-      // Get custom field 'Artikel_Freifeld6'
+      $excerpt = '';
+      if (has_excerpt($product_id)) {
+        $excerpt = wp_strip_all_tags(get_the_excerpt($product_id));
+      }
       $meta_field_6 = get_post_meta($product_id, 'Artikel_Freifeld6', true);
       $products_data[$sku] = [
-        'name' => $name,
-        'price' => $price,
+        'name' => $product->get_name(),
+        'price' => $product->get_price(),
         'freifeld6' => $meta_field_6,
-        'taxonomyField' => $segments,
-        'image' => $image,
-        'description' => $description,
+        'taxonomyField' => $excerpt,
+        'image' => wp_get_attachment_url($product->get_image_id()),
+        'description' => $product->get_description(),
       ];
     }
 
