@@ -1,17 +1,11 @@
 <?php
 /*
-Plugin Name: Product JSON API Fetch and Process with Pagination
+Plugin Name: Product JSON API wp-json/mec-api/v1/products-json/
 Description: Fetches product JSON from an external WooCommerce API with pagination, processes it, and returns the result via a custom API endpoint.
 Version: 1.0
 */
 
 add_action('rest_api_init', function () {
-
-  register_rest_route('mec-api/v1', '/products-json/', array(
-    'methods' => 'GET',
-    'callback' => 'mec_fetch_and_generate_product_json_paginated_variable',
-    'permission_callback' => '__return_true', // Open for everyone, customize as needed
-  ));
 
   register_rest_route('mec-api/v1', '/products/', array(
     'methods' => 'GET',
@@ -60,141 +54,20 @@ function mec_products_json($per_page = 100, $page = 1)
       $product_id = $product->get_id();
       $sku = $product->get_sku();
       $name = $product->get_name();
+      $price = $product->get_price();
       $description = $product->get_description();
       $image = wp_get_attachment_url($product->get_image_id());
-
+      $segments = get_the_excerpt($product_id);
       // Get custom field 'Artikel_Freifeld6'
       $meta_field_6 = get_post_meta($product_id, 'Artikel_Freifeld6', true);
-      // $attribute_name = explode(';', $meta_field_6)[2];
       $products_data[$sku] = [
         'name' => $name,
+        'price' => $price,
         'freifeld6' => $meta_field_6,
-        'freifeld6Array' => explode(';', $meta_field_6),
-        'info' => [
-          'description' => $description,
-          'image' => $image,
-        ],
+        'taxonomyField' => $segments,
+        'image' => $image,
+        'description' => $description,
       ];
-    }
-
-    // Move to the next page
-    $page++;
-    $total_products += count($products);
-
-    // Clear memory after each batch
-    wp_cache_flush();
-  } while (count($products) === $per_page); // Loop until less than $per_page products are returned
-
-  return [$products_data, $total_products];
-}
-
-
-function mec_fetch_and_generate_product_json_paginated_variable()
-{
-  $per_page = 100; // Fetch products in batches of 100
-  $page = 1;
-  $products_data = array();
-  $total_products = 0;
-
-  [$products_data, $total_products] = mec_products_variable_json();
-
-  // Return the processed product data as a JSON response
-  return rest_ensure_response(array(
-    'total_products_processed' => $total_products,
-    'products_data' => $products_data
-  ));
-}
-
-function mec_products_variable_json($per_page = 100, $page = 1)
-{
-  $variant_buffer = array(); // Buffer to temporarily store variant products
-  $products_data = array();
-  $total_products = 0;
-  do {
-    // Use WooCommerce API to get products in batches (100 per request)
-    $products = wc_get_products(array(
-      'limit' => $per_page,
-      'page' => $page,
-      'status' => 'publish'
-    ));
-
-    if (empty($products)) {
-      break; // Exit loop if no more products
-    }
-
-    // First, process only the variable products (master;1)
-    foreach ($products as $product) {
-      $product_id = $product->get_id();
-      $sku = $product->get_sku();
-      $name = $product->get_name();
-      $description = $product->get_description();
-      $image = wp_get_attachment_url($product->get_image_id());
-
-      // Get custom field 'Artikel_Freifeld6'
-      $meta_field_6 = get_post_meta($product_id, 'Artikel_Freifeld6', true);
-
-      // Variable Product (master;1 in Artikel_Freifeld6)
-      if (strpos($meta_field_6, 'master;1') !== false) {
-        // Get the attribute
-        $attribute_name = explode(';', $meta_field_6)[2];
-        $products_data[$sku] = array(
-          'sku' => $sku,
-          'products_name' => $name,
-          'products_description' => $description,
-          'products_type' => 'Variable',
-          'products_image' => $image,
-          'attribute' => array(
-            $attribute_name => array() // Variants will be added here
-          )
-        );
-      }
-    }
-
-    // Then, process the variant products (-M) and add them to their parent
-    foreach ($products as $product) {
-      $product_id = $product->get_id();
-      $sku = $product->get_sku();
-      $description = $product->get_description();
-      $meta_field_6 = get_post_meta($product_id, 'Artikel_Freifeld6', true);
-
-      // Variant Product (-M in Meta: Artikel_Freifeld6)
-      if (strpos($meta_field_6, '-M') !== false) {
-        // Get parent SKU from 'Meta: Artikel_Freifeld6'
-        $parent_sku = explode(';', $meta_field_6)[0];
-
-        // Assuming the last line of description contains the variant details
-        $description_lines = explode("\n", $description);
-        $variant_name = end($description_lines);
-
-        // Add variant to the parent product's attribute (Kolbenmaß)
-        if (isset($products_data[$parent_sku])) {
-          $attribute_name = array_key_first($products_data[$parent_sku]['attribute']);
-          $variant_count = count($products_data[$parent_sku]['attribute'][$attribute_name]) + 1;
-          $products_data[$parent_sku]['attribute'][$attribute_name][$variant_count] = array(
-            'variant' => $variant_name,
-            'sku' => $sku,
-            'price' => $product->get_price()
-          );
-        } else {
-          // Store variants in buffer if parent doesn't exist yet
-          $variant_buffer[$parent_sku][] = array(
-            'variant' => $variant_name,
-            'sku' => $sku,
-            'price' => $product->get_price()
-          );
-        }
-      }
-    }
-
-    // Now, add any buffered variants to their parent products (if they exist)
-    foreach ($variant_buffer as $parent_sku => $variants) {
-      if (isset($products_data[$parent_sku])) {
-        foreach ($variants as $variant) {
-          $attribute_name = array_key_first($products_data[$parent_sku]['attribute']);
-          $variant_count = count($products_data[$parent_sku]['attribute'][$attribute_name]) + 1;
-          $products_data[$parent_sku]['attribute'][$attribute_name][$variant_count] = $variant;
-        }
-      }
     }
 
     // Move to the next page
