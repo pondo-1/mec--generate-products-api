@@ -6,7 +6,7 @@ Version: 1.0
 */
 
 add_action('rest_api_init', function () {
-  register_rest_route('custom-api/v1', '/products-json/', array(
+  register_rest_route('mec-api/v1', '/products-json/', array(
     'methods' => 'GET',
     'callback' => 'fetch_and_generate_product_json_paginated',
     'permission_callback' => '__return_true', // Open for everyone, customize as needed
