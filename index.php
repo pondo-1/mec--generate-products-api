@@ -41,7 +41,7 @@ add_action('rest_api_init', function () {
 
 function mec_fetch_and_generate_product_json_paginated()
 {
-  $per_page = 500; // Fetch products in batches of 500
+  $per_page = 2000; // Fetch products in batches of 2000
   $page = 1;
   $products_data = array();
   $total_products = 0;
